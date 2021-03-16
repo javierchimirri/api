@@ -1,16 +1,18 @@
 <?php 
-session_start();
 
 use \Psr\Http\Message\ServerRequestInterface as Request;
 use \Psr\Http\Message\ResponseInterface as Response;
 
+//autoload Slim3
 require 'vendor/autoload.php';
+//autoload spotify-api
 require 'vendor/vendor/autoload.php';
 
 $app = new \Slim\App;
 
 $app->get('/v1/albums', function (Request $request, Response $response, array $args) {
-    if(!isset($_GET['q']) || $_GET['q'] == ''){
+    //Control que la variable "q" no esté vacía o no exista
+    if(!isset($_GET['q']) || $_GET['q'] == '') {
         $res = [
             "error" => "Falta el nombre de la banda."
         ];
@@ -18,69 +20,49 @@ $app->get('/v1/albums', function (Request $request, Response $response, array $a
         $response->getBody()->write("$json_response");
 
         return $response;
-    }else{
-        if(!isset($_SESSION['name'])){
-            $_SESSION['name'] = $_GET['q'];
-        }
-
+    } else {
         $session = new SpotifyWebAPI\Session(
             '6ee8726695d34042a9204eba953b48fd',
-            '1aa2e3ffc56f41bb9eebfc3467ee41b2',
-            'http://localhost/api/Callback.php'
+            '1aa2e3ffc56f41bb9eebfc3467ee41b2'
         );
+        
+        $session->requestCredentialsToken();
+        $accessToken = $session->getAccessToken();
     
         $api = new SpotifyWebAPI\SpotifyWebAPI();
         
-        if (isset($_SESSION['code'])) {
+        $api->setAccessToken($accessToken);
             
-            $session->requestAccessToken($_SESSION['code']);
-            $api->setAccessToken($session->getAccessToken());
-            
-            $query = urldecode($_GET['q']);
-            $type = "album";
+        $query = urldecode($_GET['q']); //Obtengo el nombre de la banda o artista sin %20
+        $type = "album";
 
-            $res = $api->search($query, $type);
+        $res = $api->search($query, $type);
+        
+        //Obtengo el id del artista o banda para asi obtener sus albums
 
-            if(count($res->albums->items) > 0) {
-                $id = $res->albums->items[0]->artists[0]->id;
-                $res = $api->getArtistAlbums($id);
-                foreach($res->items as $album){
-                    $item = [
-                        "name" => $album->name,
-                        "realesed" => $album->release_date,
-                        "tracks" => $album->total_tracks,
-                        "cover" => $album->images
-                    ];
-                    $albums[] = $item;
-                }
-
-                $json_response = json_encode($albums);
-                $response->getBody()->write("$json_response");
-
-                unset($_SESSION['name']);
-                unset($_SESSION['code']);
-
-                return $response;
-            } else {
-
-                unset($_SESSION['name']);
-                unset($_SESSION['code']);
-                
-                $res = [
-                    "error" => "No se encontraron datos."
+        if(count($res->albums->items) > 0) {
+            $id = $res->albums->items[0]->artists[0]->id;
+            $res = $api->getArtistAlbums($id);
+            foreach($res->items as $album){
+                $item = [
+                    "name" => $album->name,
+                    "realesed" => $album->release_date,
+                    "tracks" => $album->total_tracks,
+                    "cover" => $album->images
                 ];
-
-                $json_response = json_encode($res);
-                $response->getBody()->write("$json_response");
+                $albums[] = $item;
             }
+
+            $json_response = json_encode($albums);
+            $response->getBody()->write("$json_response");
+            
+            return $response;
         } else {
-            $options = [
-                'scope' => [
-                    'user-read-email',
-                ],
+            $res = [
+                "error" => "No se encontraron datos."
             ];
-            header('Location: ' . $session->getAuthorizeUrl($options));
-            die();
+            $json_response = json_encode($res);
+            $response->getBody()->write("$json_response");
         }
     }
 });
